@@ -4,30 +4,31 @@
 extern crate luthor;
 
 // Published API
-pub use self::gap_buffer::GapBuffer;
 pub use self::distance::Distance;
+pub use self::gap_buffer::GapBuffer;
 
+pub use self::cursor::Cursor;
+pub use self::line_range::LineRange;
 pub use self::position::Position;
 pub use self::range::Range;
-pub use self::line_range::LineRange;
-pub use self::cursor::Cursor;
 pub use self::token::{Lexeme, Token, TokenSet};
 pub use syntect::parsing::{Scope, ScopeStack};
 
 // Child modules
-mod gap_buffer;
-mod distance;
-mod position;
-mod range;
-mod line_range;
 mod cursor;
+mod distance;
+mod gap_buffer;
+mod line_range;
 mod operation;
 mod operations;
+mod position;
+mod range;
 mod token;
 
 // Buffer type implementation
+use self::operation::history::History;
+use self::operation::{Operation, OperationGroup};
 use errors::*;
-use std::rc::Rc;
 use std::cell::RefCell;
 use std::default::Default;
 use std::fs::File;
@@ -36,8 +37,7 @@ use std::io::{Read, Write};
 use std::mem;
 use std::ops::Fn;
 use std::path::{Path, PathBuf};
-use self::operation::{Operation, OperationGroup};
-use self::operation::history::History;
+use std::rc::Rc;
 use syntect::parsing::SyntaxDefinition;
 
 /// A feature-rich wrapper around an underlying gap buffer.
@@ -57,17 +57,17 @@ pub struct Buffer {
     history: History,
     operation_group: Option<OperationGroup>,
     pub syntax_definition: Option<SyntaxDefinition>,
-    pub change_callback: Option<Box<Fn(Position)>>,
+    pub change_callback: Option<Box<dyn Fn(Position)>>,
 }
 
 impl Default for Buffer {
     fn default() -> Self {
         let data = Rc::new(RefCell::new(GapBuffer::new(String::new())));
-        let cursor = Cursor::new(data.clone(), Position{ line: 0, offset: 0 });
+        let cursor = Cursor::new(data.clone(), Position { line: 0, offset: 0 });
         let mut history = History::new();
         history.mark();
 
-        Buffer{
+        Buffer {
             id: None,
             data: data.clone(),
             path: None,
@@ -122,13 +122,13 @@ impl Buffer {
         file.read_to_string(&mut data)?;
 
         let data = Rc::new(RefCell::new(GapBuffer::new(data)));
-        let cursor = Cursor::new(data.clone(), Position{ line: 0, offset: 0 });
+        let cursor = Cursor::new(data.clone(), Position { line: 0, offset: 0 });
 
         // Create a new buffer using the loaded data, path, and other defaults.
-        let mut buffer =  Buffer{
+        let mut buffer = Buffer {
             id: None,
             data: data.clone(),
-            path: Some(try!(path.canonicalize())),
+            path: Some(path.canonicalize()?),
             cursor,
             history: History::new(),
             operation_group: None,
@@ -186,12 +186,11 @@ impl Buffer {
     /// ```
     pub fn save(&mut self) -> io::Result<()> {
         // Try to open and write to the file, returning any errors encountered.
-        let mut file =
-            if let Some(ref path) = self.path {
-                File::create(&path)?
-            } else {
-                File::create(&PathBuf::new())?
-            };
+        let mut file = if let Some(ref path) = self.path {
+            File::create(&path)?
+        } else {
+            File::create(&PathBuf::new())?
+        };
 
         // We use to_string here because we don't want to write the gap contents.
         file.write_all(self.data().to_string().as_bytes())?;
@@ -280,21 +279,16 @@ impl Buffer {
     /// ```
     pub fn file_name(&self) -> Option<String> {
         match self.path {
-            Some(ref path) => {
-                match path.file_name() {
-                    Some(file_name) => {
-                        match file_name.to_str() {
-                            Some(utf8_file_name) => Some(utf8_file_name.to_string()),
-                            None => None,
-                        }
-                    },
+            Some(ref path) => match path.file_name() {
+                Some(file_name) => match file_name.to_str() {
+                    Some(utf8_file_name) => Some(utf8_file_name.to_string()),
                     None => None,
-                }
+                },
+                None => None,
             },
             None => None,
         }
     }
-
 
     /// Reverses the last modification to the buffer.
     ///
@@ -324,7 +318,7 @@ impl Buffer {
     pub fn undo(&mut self) {
         // Look for an operation to undo. First, check if there's an open, non-empty
         // operation group. If not, try taking the last operation from the buffer history.
-        let operation: Option<Box<Operation>> = match self.operation_group.take() {
+        let operation: Option<Box<dyn Operation>> = match self.operation_group.take() {
             Some(group) => {
                 if group.is_empty() {
                     self.history.previous()
@@ -413,13 +407,10 @@ impl Buffer {
                 let haystack = &data[offset..];
 
                 // Check haystack length before slicing it and comparing bytes with needle.
-                if haystack.len() >= needle.len() && needle.as_bytes() == &haystack.as_bytes()[..needle.len()] {
-                    results.push(
-                        Position{
-                            line,
-                            offset
-                        }
-                    );
+                if haystack.len() >= needle.len()
+                    && needle.as_bytes() == &haystack.as_bytes()[..needle.len()]
+                {
+                    results.push(Position { line, offset });
                 }
             }
         }
@@ -503,7 +494,7 @@ impl Buffer {
                     self.id = buf.id;
                     self.syntax_definition = buf.syntax_definition;
                     self.change_callback = buf.change_callback;
-                },
+                }
                 Err(e) => return Err(e),
             }
         }
@@ -520,11 +511,11 @@ impl Buffer {
 #[cfg(test)]
 mod tests {
     extern crate syntect;
-    use syntect::parsing::SyntaxSet;
+    use buffer::{Buffer, Position};
     use std::cell::RefCell;
     use std::path::Path;
     use std::rc::Rc;
-    use buffer::{Buffer, Position};
+    use syntect::parsing::SyntaxSet;
 
     #[test]
     fn reload_persists_id_and_syntax_definition() {
@@ -554,7 +545,7 @@ mod tests {
         buffer.insert("amp\neditor");
 
         // Create a non-zero position that we'll share with the callback.
-        let tracked_position = Rc::new(RefCell::new(Position{ line: 1, offset: 1 }));
+        let tracked_position = Rc::new(RefCell::new(Position { line: 1, offset: 1 }));
         let callback_position = tracked_position.clone();
 
         // Set up the callback so that it updates the shared position.
@@ -603,7 +594,7 @@ mod tests {
         buffer.insert("scribe");
         assert_eq!("scribe", buffer.data());
 
-        buffer.cursor.move_to(Position{ line: 0, offset: 0 });
+        buffer.cursor.move_to(Position { line: 0, offset: 0 });
         buffer.delete();
         assert_eq!("cribe", buffer.data());
 
@@ -618,12 +609,15 @@ mod tests {
         // Run some operations in a group.
         buffer.start_operation_group();
         buffer.insert("scribe");
-        buffer.cursor.move_to(Position{ line: 0, offset: 6});
+        buffer.cursor.move_to(Position { line: 0, offset: 6 });
         buffer.insert(" library");
         buffer.end_operation_group();
 
         // Run an operation outside of the group.
-        buffer.cursor.move_to(Position{ line: 0, offset: 14});
+        buffer.cursor.move_to(Position {
+            line: 0,
+            offset: 14,
+        });
         buffer.insert(" test");
 
         // Make sure the buffer looks okay.
@@ -647,9 +641,12 @@ mod tests {
 
         // Run some operations in a group, without closing it.
         buffer.start_operation_group();
-        buffer.cursor.move_to(Position{ line: 0, offset: 6});
+        buffer.cursor.move_to(Position { line: 0, offset: 6 });
         buffer.insert(" library");
-        buffer.cursor.move_to(Position{ line: 0, offset: 14});
+        buffer.cursor.move_to(Position {
+            line: 0,
+            offset: 14,
+        });
         buffer.insert(" test");
 
         // Make sure the buffer looks okay.

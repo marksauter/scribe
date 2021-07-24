@@ -23,8 +23,8 @@ impl Workspace {
         let mut syntax_set = SyntaxSet::load_defaults_newlines();
         syntax_set.link_syntaxes();
 
-        Ok(Workspace{
-            path: try!(path.canonicalize()),
+        Ok(Workspace {
+            path: path.canonicalize()?,
             buffers: Vec::new(),
             next_buffer_id: 0,
             current_buffer_index: None,
@@ -62,7 +62,7 @@ impl Workspace {
         self.next_buffer_id += 1;
 
         // The target index is directly after the current buffer's index.
-        let target_index = self.current_buffer_index.map(|i| i + 1 ).unwrap_or(0);
+        let target_index = self.current_buffer_index.map(|i| i + 1).unwrap_or(0);
 
         // Add a syntax definition to the buffer, if it doesn't already have one.
         if buf.syntax_definition.is_none() {
@@ -117,7 +117,7 @@ impl Workspace {
             // Not going to run into IO errors if we're not opening a buffer.
             Ok(())
         } else {
-            let buffer = try!(Buffer::from_file(path));
+            let buffer = Buffer::from_file(path)?;
             self.add_buffer(buffer);
 
             Ok(())
@@ -182,12 +182,12 @@ impl Workspace {
     /// assert_eq!(workspace.current_buffer_path(), Some(Path::new("file")));
     /// ```
     pub fn current_buffer_path(&self) -> Option<&Path> {
-        self.current_buffer_index
-          .and_then(|i| self.buffers[i].path.as_ref()
-              .and_then(|path| path.strip_prefix(&self.path).ok()
-                  .or_else(|| Some(path))
-              )
-          )
+        self.current_buffer_index.and_then(|i| {
+            self.buffers[i]
+                .path
+                .as_ref()
+                .and_then(|path| path.strip_prefix(&self.path).ok().or_else(|| Some(path)))
+        })
     }
 
     /// Removes the currently selected buffer from the collection.
@@ -255,11 +255,11 @@ impl Workspace {
         match self.current_buffer_index {
             Some(index) => {
                 if index > 0 {
-                    self.current_buffer_index = Some(index-1);
+                    self.current_buffer_index = Some(index - 1);
                 } else {
-                    self.current_buffer_index = Some(self.buffers.len()-1);
+                    self.current_buffer_index = Some(self.buffers.len() - 1);
                 }
-            },
+            }
             None => return,
         }
     }
@@ -292,12 +292,12 @@ impl Workspace {
     pub fn next_buffer(&mut self) {
         match self.current_buffer_index {
             Some(index) => {
-                if index == self.buffers.len()-1 {
+                if index == self.buffers.len() - 1 {
                     self.current_buffer_index = Some(0);
                 } else {
-                    self.current_buffer_index = Some(index+1);
+                    self.current_buffer_index = Some(index + 1);
                 }
-            },
+            }
             None => return,
         }
     }
@@ -327,11 +327,9 @@ impl Workspace {
     /// ```
     pub fn contains_buffer_with_path(&self, path: &Path) -> bool {
         if let Ok(ref canonical_path) = path.canonicalize() {
-            self.buffers.iter().any(|buffer| {
-                match buffer.path {
-                    Some(ref buffer_path) => buffer_path == canonical_path,
-                    None => false,
-                }
+            self.buffers.iter().any(|buffer| match buffer.path {
+                Some(ref buffer_path) => buffer_path == canonical_path,
+                None => false,
             })
         } else {
             false
@@ -393,16 +391,21 @@ impl Workspace {
     // falling back to a plain text definition if one cannot be found.
     fn find_syntax_definition(&self, buffer: &Buffer) -> Option<SyntaxDefinition> {
         // Find the syntax definition using the buffer's file extension.
-        buffer.path.as_ref().and_then(|path|
-            path.to_str().and_then(|p| p.split('.').last()).and_then(|ex|
-                self.syntax_set.find_syntax_by_extension(ex).and_then(|s|
-                    Some(s.clone())
-                )
-            )
-        ).or_else(||
+        buffer
+            .path
+            .as_ref()
+            .and_then(|path| {
+                path.to_str()
+                    .and_then(|p| p.split('.').last())
+                    .and_then(|ex| {
+                        self.syntax_set
+                            .find_syntax_by_extension(ex)
+                            .and_then(|s| Some(s.clone()))
+                    })
+            })
+            .or_else(||
             // Fall back to a plain text definition.
-            Some(self.syntax_set.find_syntax_plain_text().clone())
-        )
+            Some(self.syntax_set.find_syntax_plain_text().clone()))
     }
 }
 
@@ -410,8 +413,8 @@ impl Workspace {
 mod tests {
     use super::Workspace;
     use buffer::Buffer;
-    use std::path::Path;
     use std::env;
+    use std::path::Path;
 
     #[test]
     fn add_buffer_adds_and_selects_the_passed_buffer() {
@@ -470,10 +473,14 @@ mod tests {
         workspace.add_buffer(buf);
 
         let name = workspace
-          .current_buffer()
-          .and_then(|ref b| b.syntax_definition.as_ref().map(|sd| sd.name.clone()));
+            .current_buffer()
+            .and_then(|ref b| b.syntax_definition.as_ref().map(|sd| sd.name.clone()));
 
-        assert!(workspace.current_buffer().unwrap().syntax_definition.is_some());
+        assert!(workspace
+            .current_buffer()
+            .unwrap()
+            .syntax_definition
+            .is_some());
         assert_eq!(name, Some("Plain Text".to_string()));
     }
 
@@ -484,17 +491,23 @@ mod tests {
         workspace.add_buffer(buf.unwrap());
 
         let name = workspace
-          .current_buffer()
-          .and_then(|ref b| b.syntax_definition.as_ref().map(|sd| sd.name.clone()));
+            .current_buffer()
+            .and_then(|ref b| b.syntax_definition.as_ref().map(|sd| sd.name.clone()));
 
-        assert!(workspace.current_buffer().unwrap().syntax_definition.is_some());
+        assert!(workspace
+            .current_buffer()
+            .unwrap()
+            .syntax_definition
+            .is_some());
         assert_eq!(name, Some("Plain Text".to_string()));
     }
 
     #[test]
     fn open_buffer_adds_and_selects_the_buffer_at_the_specified_path() {
         let mut workspace = Workspace::new(Path::new("tests/sample")).unwrap();
-        workspace.open_buffer(Path::new("tests/sample/file")).unwrap();
+        workspace
+            .open_buffer(Path::new("tests/sample/file"))
+            .unwrap();
 
         assert_eq!(workspace.buffers.len(), 1);
         assert_eq!(workspace.current_buffer().unwrap().data(), "it works!\n");
@@ -503,8 +516,12 @@ mod tests {
     #[test]
     fn open_buffer_does_not_open_a_buffer_already_in_the_workspace() {
         let mut workspace = Workspace::new(Path::new("tests/sample")).unwrap();
-        workspace.open_buffer(Path::new("tests/sample/file")).unwrap();
-        workspace.open_buffer(Path::new("tests/sample/file")).unwrap();
+        workspace
+            .open_buffer(Path::new("tests/sample/file"))
+            .unwrap();
+        workspace
+            .open_buffer(Path::new("tests/sample/file"))
+            .unwrap();
 
         assert_eq!(workspace.buffers.len(), 1);
     }
@@ -512,7 +529,9 @@ mod tests {
     #[test]
     fn open_buffer_selects_buffer_if_it_already_exists_in_workspace() {
         let mut workspace = Workspace::new(Path::new("tests/sample")).unwrap();
-        workspace.open_buffer(Path::new("tests/sample/file")).unwrap();
+        workspace
+            .open_buffer(Path::new("tests/sample/file"))
+            .unwrap();
 
         // Add and select another buffer.
         let mut buf = Buffer::new();
@@ -521,7 +540,9 @@ mod tests {
         assert_eq!(workspace.current_buffer().unwrap().data(), "scribe");
 
         // Try to add the first buffer again.
-        workspace.open_buffer(Path::new("tests/sample/file")).unwrap();
+        workspace
+            .open_buffer(Path::new("tests/sample/file"))
+            .unwrap();
 
         // Ensure there are only two buffers, and that the
         // one requested via open_buffer is now selected.
@@ -550,7 +571,10 @@ mod tests {
         let absolute_path = env::current_dir().unwrap();
         buf.path = Some(absolute_path.clone());
         workspace.add_buffer(buf);
-        assert_eq!(workspace.current_buffer_path(), Some(absolute_path.as_path()));
+        assert_eq!(
+            workspace.current_buffer_path(),
+            Some(absolute_path.as_path())
+        );
     }
 
     #[test]

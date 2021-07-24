@@ -12,7 +12,7 @@ use buffer::Buffer;
 /// to handle all of their undo/redo implementation details. It exposes two methods on the
 /// buffer type to signal the start and end of a group.
 pub struct OperationGroup {
-    operations: Vec<Box<Operation>>,
+    operations: Vec<Box<dyn Operation>>,
 }
 
 impl Operation for OperationGroup {
@@ -32,9 +32,13 @@ impl Operation for OperationGroup {
 
     /// Build a new operation group by manually cloning all of the groups individual operations.
     /// We can't derive this because operations are unsized and need some hand holding.
-    fn clone_operation(&self) -> Box<Operation> {
-        Box::new(OperationGroup{
-            operations: self.operations.iter().map(|o| (*o).clone_operation()).collect()
+    fn clone_operation(&self) -> Box<dyn Operation> {
+        Box::new(OperationGroup {
+            operations: self
+                .operations
+                .iter()
+                .map(|o| (*o).clone_operation())
+                .collect(),
         })
     }
 }
@@ -42,11 +46,13 @@ impl Operation for OperationGroup {
 impl OperationGroup {
     /// Creates a new empty operation group.
     pub fn new() -> OperationGroup {
-        OperationGroup{ operations: Vec::new() }
+        OperationGroup {
+            operations: Vec::new(),
+        }
     }
 
     /// Adds an operation to the group.
-    pub fn add(&mut self, operation: Box<Operation>) {
+    pub fn add(&mut self, operation: Box<dyn Operation>) {
         self.operations.push(operation);
     }
 
@@ -86,9 +92,9 @@ impl Buffer {
 #[cfg(test)]
 mod tests {
     use super::OperationGroup;
+    use buffer::operation::Operation;
     use buffer::operations::Insert;
     use buffer::{Buffer, Position};
-    use buffer::operation::Operation;
 
     #[test]
     fn run_and_reverse_call_themselves_on_all_operations() {
@@ -96,8 +102,14 @@ mod tests {
         let mut buffer = Buffer::new();
 
         // Push two insert operations into the group.
-        let first = Box::new(Insert::new("something".to_string(), Position{ line: 0, offset: 0 }));
-        let second = Box::new(Insert::new(" else".to_string(), Position{ line: 0, offset: 9 }));
+        let first = Box::new(Insert::new(
+            "something".to_string(),
+            Position { line: 0, offset: 0 },
+        ));
+        let second = Box::new(Insert::new(
+            " else".to_string(),
+            Position { line: 0, offset: 9 },
+        ));
         group.add(first);
         group.add(second);
 
