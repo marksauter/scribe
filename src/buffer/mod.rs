@@ -29,7 +29,6 @@ mod token;
 use self::operation::history::History;
 use self::operation::{Operation, OperationGroup};
 use errors::*;
-use std::cell::RefCell;
 use std::default::Default;
 use std::fs::File;
 use std::io;
@@ -37,7 +36,7 @@ use std::io::{Read, Write};
 use std::mem;
 use std::ops::Fn;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::sync::{Arc, RwLock};
 use syntect::parsing::SyntaxDefinition;
 
 /// A feature-rich wrapper around an underlying gap buffer.
@@ -51,7 +50,7 @@ use syntect::parsing::SyntaxDefinition;
 /// cache invalidation.
 pub struct Buffer {
     pub id: Option<usize>,
-    data: Rc<RefCell<GapBuffer>>,
+    data: Arc<RwLock<GapBuffer>>,
     pub path: Option<PathBuf>,
     pub cursor: Cursor,
     history: History,
@@ -62,7 +61,7 @@ pub struct Buffer {
 
 impl Default for Buffer {
     fn default() -> Self {
-        let data = Rc::new(RefCell::new(GapBuffer::new(String::new())));
+        let data = Arc::new(RwLock::new(GapBuffer::new(String::new())));
         let cursor = Cursor::new(data.clone(), Position { line: 0, offset: 0 });
         let mut history = History::new();
         history.mark();
@@ -121,7 +120,7 @@ impl Buffer {
         let mut data = String::new();
         file.read_to_string(&mut data)?;
 
-        let data = Rc::new(RefCell::new(GapBuffer::new(data)));
+        let data = Arc::new(RwLock::new(GapBuffer::new(data)));
         let cursor = Cursor::new(data.clone(), Position { line: 0, offset: 0 });
 
         // Create a new buffer using the loaded data, path, and other defaults.
@@ -155,7 +154,7 @@ impl Buffer {
     /// assert_eq!(buffer.data(), "scribe");
     /// ```
     pub fn data(&self) -> String {
-        self.data.borrow().to_string()
+        self.data.read().unwrap().to_string()
     }
 
     /// Writes the contents of the buffer to its path.
@@ -376,7 +375,7 @@ impl Buffer {
     /// assert_eq!("crib", buffer.read(&range).unwrap());
     /// ```
     pub fn read(&self, range: &Range) -> Option<String> {
-        self.data.borrow().read(range)
+        self.data.read().unwrap().read(range)
     }
 
     /// Searches the buffer for (and returns positions
@@ -512,9 +511,8 @@ impl Buffer {
 mod tests {
     extern crate syntect;
     use buffer::{Buffer, Position};
-    use std::cell::RefCell;
     use std::path::Path;
-    use std::rc::Rc;
+    use std::sync::{Arc, RwLock};
     use syntect::parsing::SyntaxSet;
 
     #[test]
@@ -545,19 +543,19 @@ mod tests {
         buffer.insert("amp\neditor");
 
         // Create a non-zero position that we'll share with the callback.
-        let tracked_position = Rc::new(RefCell::new(Position { line: 1, offset: 1 }));
+        let tracked_position = Arc::new(RwLock::new(Position { line: 1, offset: 1 }));
         let callback_position = tracked_position.clone();
 
         // Set up the callback so that it updates the shared position.
         buffer.change_callback = Some(Box::new(move |change_position| {
-            *callback_position.borrow_mut() = change_position
+            *callback_position.write().unwrap() = change_position
         }));
 
         // Reload the buffer
         buffer.reload().unwrap();
 
         // Verify that the callback received the correct position.
-        assert_eq!(*tracked_position.borrow(), Position::new());
+        assert_eq!(*tracked_position.read().unwrap(), Position::new());
     }
 
     #[test]

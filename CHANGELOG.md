@@ -1,3 +1,7 @@
+### 0.7.3
+
+* Changed use of `Rc<RefCell<T>>` to `Arc<RwLock<T>>`.
+
 ### 0.7.2
 
 * Renamed Distance type's `from_str` method to `of_str`, to prevent ambiguity

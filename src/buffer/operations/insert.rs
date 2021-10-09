@@ -22,7 +22,8 @@ impl Operation for Insert {
     fn run(&mut self, buffer: &mut Buffer) {
         buffer
             .data
-            .borrow_mut()
+            .write()
+            .unwrap()
             .insert(&self.content, &self.position);
 
         // Run the change callback, if present.
@@ -62,7 +63,7 @@ impl Operation for Insert {
         let range = Range::new(self.position, end_position);
 
         // Remove the content we'd previously inserted.
-        buffer.data.borrow_mut().delete(&range);
+        buffer.data.write().unwrap().delete(&range);
 
         // Run the change callback, if present.
         if let Some(ref callback) = buffer.change_callback {
@@ -114,8 +115,7 @@ mod tests {
     use buffer::operation::Operation;
     use buffer::position::Position;
     use buffer::Buffer;
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use std::sync::{Arc, RwLock};
 
     #[test]
     fn run_and_reverse_add_and_remove_content_without_newlines_at_cursor_position() {
@@ -230,12 +230,12 @@ mod tests {
         let insert_position = Position { line: 0, offset: 9 };
 
         // Create a position that we'll share with the callback.
-        let tracked_position = Rc::new(RefCell::new(Position::new()));
+        let tracked_position = Arc::new(RwLock::new(Position::new()));
         let callback_position = tracked_position.clone();
 
         // Set up the callback so that it updates the shared position.
         buffer.change_callback = Some(Box::new(move |change_position| {
-            *callback_position.borrow_mut() = change_position
+            *callback_position.write().unwrap() = change_position
         }));
 
         // Create the insert operation and run it.
@@ -243,7 +243,10 @@ mod tests {
         insert_operation.run(&mut buffer);
 
         // Verify that the callback received the correct position.
-        assert_eq!(*tracked_position.borrow(), Position { line: 0, offset: 9 });
+        assert_eq!(
+            *tracked_position.read().unwrap(),
+            Position { line: 0, offset: 9 }
+        );
     }
 
     #[test]
@@ -260,18 +263,21 @@ mod tests {
         insert_operation.run(&mut buffer);
 
         // Create a position that we'll share with the callback.
-        let tracked_position = Rc::new(RefCell::new(Position::new()));
+        let tracked_position = Arc::new(RwLock::new(Position::new()));
         let callback_position = tracked_position.clone();
 
         // Set up the callback so that it updates the shared position.
         buffer.change_callback = Some(Box::new(move |change_position| {
-            *callback_position.borrow_mut() = change_position
+            *callback_position.write().unwrap() = change_position
         }));
 
         // Reverse the operation.
         insert_operation.reverse(&mut buffer);
 
         // Verify that the callback received the correct position.
-        assert_eq!(*tracked_position.borrow(), Position { line: 0, offset: 9 });
+        assert_eq!(
+            *tracked_position.read().unwrap(),
+            Position { line: 0, offset: 9 }
+        );
     }
 }

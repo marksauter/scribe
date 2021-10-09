@@ -19,10 +19,10 @@ pub struct Delete {
 impl Operation for Delete {
     fn run(&mut self, buffer: &mut Buffer) {
         // Fetch and store the content we're about to delete.
-        self.content = buffer.data.borrow().read(&self.range);
+        self.content = buffer.data.read().unwrap().read(&self.range);
 
         // Delete the data.
-        buffer.data.borrow_mut().delete(&self.range);
+        buffer.data.write().unwrap().delete(&self.range);
 
         // Run the change callback, if present.
         if let Some(ref callback) = buffer.change_callback {
@@ -34,7 +34,8 @@ impl Operation for Delete {
         if let Some(ref content) = self.content {
             buffer
                 .data
-                .borrow_mut()
+                .write()
+                .unwrap()
                 .insert(content, &self.range.start());
 
             // Run the change callback, if present.
@@ -86,7 +87,7 @@ impl Buffer {
         // delete the newline by jumping to the start
         // of the next line. If it doesn't exist, that's okay;
         // these values are bounds-checked by delete() anyway.
-        if !self.data.borrow().in_bounds(&end) {
+        if !self.data.read().unwrap().in_bounds(&end) {
             end.line += 1;
             end.offset = 0;
         }
@@ -139,8 +140,7 @@ mod tests {
     use super::Delete;
     use buffer::operation::Operation;
     use buffer::{Buffer, Position, Range};
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use std::sync::{Arc, RwLock};
 
     #[test]
     fn run_and_reverse_remove_and_add_content_without_newlines_at_cursor_position() {
@@ -210,12 +210,12 @@ mod tests {
         let delete_range = Range::new(start, end);
 
         // Create a position that we'll share with the callback.
-        let tracked_position = Rc::new(RefCell::new(Position::new()));
+        let tracked_position = Arc::new(RwLock::new(Position::new()));
         let callback_position = tracked_position.clone();
 
         // Set up the callback so that it updates the shared position.
         buffer.change_callback = Some(Box::new(move |change_position| {
-            *callback_position.borrow_mut() = change_position
+            *callback_position.write().unwrap() = change_position
         }));
 
         // Create the delete operation and run it.
@@ -223,7 +223,10 @@ mod tests {
         delete_operation.run(&mut buffer);
 
         // Verify that the callback received the correct position.
-        assert_eq!(*tracked_position.borrow(), Position { line: 0, offset: 9 });
+        assert_eq!(
+            *tracked_position.read().unwrap(),
+            Position { line: 0, offset: 9 }
+        );
     }
 
     #[test]
@@ -245,18 +248,21 @@ mod tests {
         delete_operation.run(&mut buffer);
 
         // Create a position that we'll share with the callback.
-        let tracked_position = Rc::new(RefCell::new(Position::new()));
+        let tracked_position = Arc::new(RwLock::new(Position::new()));
         let callback_position = tracked_position.clone();
 
         // Set up the callback so that it updates the shared position.
         buffer.change_callback = Some(Box::new(move |change_position| {
-            *callback_position.borrow_mut() = change_position
+            *callback_position.write().unwrap() = change_position
         }));
 
         // Reverse the operation.
         delete_operation.reverse(&mut buffer);
 
         // Verify that the callback received the correct position.
-        assert_eq!(*tracked_position.borrow(), Position { line: 0, offset: 9 });
+        assert_eq!(
+            *tracked_position.read().unwrap(),
+            Position { line: 0, offset: 9 }
+        );
     }
 }

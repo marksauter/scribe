@@ -2,6 +2,8 @@
 
 # Scribe: A text editor toolkit
 
+## NOTE: This is a fork of https://github.com/jmacdonald/scribe.
+
 Scribe was extracted from [Amp](https://amp.rs), a text editor written in Rust.
 It provides a layered set of types for dealing with text documents.
 

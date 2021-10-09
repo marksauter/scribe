@@ -1,11 +1,11 @@
 [package]
 
 name = "scribe"
-version = "0.7.2"
-authors = ["Jordan MacDonald <jordan@wastedintelligence.com>"]
+version = "0.7.3"
+authors = ["Jordan MacDonald <jordan@wastedintelligence.com>", "Mark Sauter <dr.funk.mark@gmail.com>"]
 description = "Text editor toolkit."
-homepage = "https://github.com/jmacdonald/scribe"
-repository = "https://github.com/jmacdonald/scribe"
+homepage = "https://github.com/marksauter/scribe"
+repository = "https://github.com/marksauter/scribe"
 documentation = "https://docs.rs/scribe"
 readme = "README.md"
 license-file = "LICENSE"
